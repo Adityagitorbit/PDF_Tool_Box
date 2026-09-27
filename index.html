@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PDF Toolbox</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+:root {
+  --bg: #14151A; --panel: #1B1D24; --elevated: #22242D; --border: #2E313C;
+  --text: #F2F2F5; --muted: #9A9CA8; --accent: #7C5CFC; --accent-hover:#8F72FD;
+  --danger: #FF6B6B; --success: #4ADE80;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:#F5F5F8; --panel:#FFFFFF; --elevated:#F0EFF6; --border:#E1E1EA;
+    --text:#1A1A22; --muted:#6B6C78;
+  }
+}
+:root[data-theme="light"] {
+  --bg:#F5F5F8; --panel:#FFFFFF; --elevated:#F0EFF6; --border:#E1E1EA;
+  --text:#1A1A22; --muted:#6B6C78;
+}
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+* { box-sizing: border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif; min-height:100vh;
+}
+.wrap { max-width: 780px; margin:0 auto; padding: 28px 20px 60px; }
+h1 { font-size:22px; margin:0 0 4px; }
+.sub { color:var(--muted); font-size:13px; margin:0 0 20px; }
+.tabs { display:flex; gap:8px; margin-bottom:18px; }
+.tab {
+  flex:1; padding:10px 14px; border-radius:10px; border:1px solid var(--border);
+  background:var(--panel); color:var(--muted); cursor:pointer; font-size:13px; font-weight:600;
+  text-align:center;
+}
+.tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.panel { display:none; }
+.panel.active { display:block; }
+.card {
+  background:var(--panel); border:1px solid var(--border); border-radius:12px;
+  padding:16px; margin-bottom:14px;
+}
+.dropzone {
+  border:2px dashed var(--border); border-radius:10px; background:var(--elevated);
+  padding:20px; text-align:center; color:var(--muted); cursor:pointer; margin-bottom:10px;
+  transition: border-color .15s;
+}
+.dropzone.drag { border-color: var(--accent); color:var(--text); }
+.filelist { list-style:none; margin:0; padding:0; }
+.filelist li {
+  display:flex; align-items:center; gap:8px; background:var(--elevated);
+  border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px;
+  cursor:grab; font-size:13px;
+}
+.filelist li.dragging { opacity:.4; }
+.filelist .handle { color:var(--muted); }
+.filelist .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.filelist button {
+  background:transparent; border:none; color:var(--danger); cursor:pointer; font-size:15px; padding:2px 6px;
+}
+.row { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+.row label { font-size:13px; color:var(--muted); }
+input[type=text] {
+  background:var(--elevated); border:1px solid var(--border); border-radius:8px;
+  padding:8px 10px; color:var(--text); font-size:13px; flex:1; min-width:120px;
+}
+button.primary {
+  background:var(--accent); color:#fff; border:none; border-radius:8px;
+  padding:11px 18px; font-weight:600; font-size:14px; cursor:pointer; width:100%; margin-top:12px;
+}
+button.primary:hover { background:var(--accent-hover); }
+button.primary:disabled { background:var(--border); color:var(--muted); cursor:default; }
+.status { font-size:12px; color:var(--muted); margin-top:10px; min-height:16px; }
+.status.err { color:var(--danger); }
+.status.ok { color:var(--success); }
+input[type=file] { display:none; }
+.check { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text); }
+.mem-note { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.4; }
+.size-warn { font-size:12px; margin-top:8px; padding:8px 10px; border-radius:8px; display:none; }
+.size-warn.show { display:block; }
+.size-warn.info { background:var(--elevated); color:var(--muted); }
+.size-warn.caution { background:rgba(255,193,7,0.12); color:#E8A93B; }
+.size-warn.danger { background:rgba(255,107,107,0.12); color:var(--danger); }
+.size-warn.ok { background:rgba(74,222,128,0.10); color:var(--success); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📄 PDF Toolbox</h1>
+  <p class="sub">Runs entirely in your browser — nothing is uploaded anywhere.</p>
+
+  <div class="card">
+    <div style="font-size:13px;"><strong>Estimated safe batch size:</strong> <span id="mem-limit">calculating…</span></div>
+    <div class="mem-note" id="mem-note"></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="img">🖼️ Images → PDF</div>
+    <div class="tab" data-tab="merge">🔗 Merge PDFs</div>
+  </div>
+
+  <!-- IMAGES TO PDF -->
+  <div class="panel active" id="panel-img">
+    <div class="card">
+      <div class="dropzone" id="dz-img">Drag images here, or click to browse</div>
+      <input type="file" id="input-img" accept="image/*" multiple>
+      <ul class="filelist" id="list-img"></ul>
+      <div class="size-warn" id="warn-img"></div>
+      <div class="row"><label class="check"><input type="checkbox" id="rotate-check" checked> Auto-rotate landscape images to portrait</label></div>
+      <div class="row"><label>File name:</label><input type="text" id="name-img" value="output.pdf"></div>
+      <button class="primary" id="btn-img">Convert to PDF</button>
+      <div class="status" id="status-img"></div>
+    </div>
+  </div>
+
+  <!-- MERGE PDFS -->
+  <div class="panel" id="panel-merge">
+    <div class="card">
+      <div class="dropzone" id="dz-merge">Drag PDFs here, or click to browse</div>
+      <input type="file" id="input-merge" accept="application/pdf" multiple>
+      <ul class="filelist" id="list-merge"></ul>
+      <div class="size-warn" id="warn-merge"></div>
+      <div class="row"><label>File name:</label><input type="text" id="name-merge" value="merged.pdf"></div>
+      <button class="primary" id="btn-merge">Merge PDFs</button>
+      <div class="status" id="status-merge"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+}));
+
+// ---- Memory estimate (approximate — browsers do not expose free RAM) ----
+const memBudgetMB = (() => {
+  const totalGB = navigator.deviceMemory; // Chrome/Edge/Android only, rounded, capped at 8
+  const limitEl = document.getElementById('mem-limit');
+  const noteEl = document.getElementById('mem-note');
+  let budgetMB;
+  const FRACTION = 0.125; // 12.5% of reported total (within the 10-15% recommended range)
+  if (totalGB) {
+    budgetMB = Math.round(totalGB * 1024 * FRACTION);
+    limitEl.textContent = `~${budgetMB} MB per batch`;
+    noteEl.textContent = `Your browser reports ~${totalGB} GB of device memory (this figure is rounded and capped by the browser, and is total memory, not free — sites can't read actual free RAM). We recommend staying under ~${Math.round(FRACTION*100)}% of that per batch so the tab stays responsive.`;
+  } else {
+    budgetMB = 150;
+    limitEl.textContent = `~${budgetMB} MB per batch (conservative default)`;
+    noteEl.textContent = `Your browser (common on Safari/iOS) doesn't share memory info with websites, so this is a safe conservative default rather than a measurement of your device.`;
+  }
+  return budgetMB;
+})();
+
+function updateSizeWarning(files, warnElId) {
+  const el = document.getElementById(warnElId);
+  const totalMB = files.reduce((s, f) => s + f.size, 0) / (1024 * 1024);
+  el.classList.remove('show', 'caution', 'danger', 'ok');
+  if (totalMB === 0) { el.textContent = ''; return; }
+
+  const remainingMB = memBudgetMB - totalMB;
+
+  if (totalMB > memBudgetMB * 2) {
+    el.textContent = `⚠️ Selected: ~${Math.round(totalMB)} MB — ~${Math.round(Math.abs(remainingMB))} MB over your ~${memBudgetMB} MB recommended budget. This will likely be slow or crash the tab. Try a smaller batch.`;
+    el.classList.add('show', 'danger');
+  } else if (totalMB > memBudgetMB) {
+    el.textContent = `⚠️ Selected: ~${Math.round(totalMB)} MB — ~${Math.round(Math.abs(remainingMB))} MB over your ~${memBudgetMB} MB recommended budget. Should still work, but may be slow.`;
+    el.classList.add('show', 'caution');
+  } else {
+    el.textContent = `Selected: ~${Math.round(totalMB)} MB — ~${Math.round(remainingMB)} MB of your ~${memBudgetMB} MB recommended budget left.`;
+    el.classList.add('show', 'ok');
+  }
+}
+
+function checkMemoryPressure() {
+  // Chrome-only non-standard API; a no-op safety net elsewhere.
+  if (performance.memory) {
+    const { usedJSHeapSize, jsHeapSizeLimit } = performance.memory;
+    if (jsHeapSizeLimit && usedJSHeapSize / jsHeapSizeLimit > 0.85) {
+      throw new Error('Running low on browser memory. Try a smaller batch of files.');
+    }
+  }
+}
+
+let downloadsCap = null;
+(async () => {
+  try {
+    if (window.claude && window.claude.use) {
+      downloadsCap = await window.claude.use('downloads');
+    }
+  } catch (e) { downloadsCap = null; }
+})();
+
+async function saveFile(filename, blob) {
+  if (downloadsCap) {
+    try {
+      await downloadsCap.save({ filename, data: blob });
+      return true;
+    } catch (e) {
+      console.error('downloads.save failed', e);
+    }
+  }
+  // Fallback for non-Claude hosting (e.g. this page deployed on your own site)
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return true;
+}
+
+function setupList(dzId, inputId, listId, accept, warnElId) {
+  const dz = document.getElementById(dzId);
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  let files = [];
+
+  dz.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => addFiles([...input.files]));
+  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e => {
+    const dropped = [...e.dataTransfer.files].filter(f => accept(f));
+    addFiles(dropped);
+  });
+
+  function addFiles(newFiles) {
+    files = files.concat(newFiles);
+    render();
+    updateSizeWarning(files, warnElId);
+  }
+
+  function render() {
+    list.innerHTML = '';
+    files.forEach((f, i) => {
+      const li = document.createElement('li');
+      li.draggable = true;
+      li.dataset.index = i;
+      li.innerHTML = `<span class="handle">⠿</span><span class="name">${f.name}</span><button data-i="${i}">✕</button>`;
+      li.addEventListener('dragstart', e => { li.classList.add('dragging'); e.dataTransfer.setData('text/plain', i); });
+      li.addEventListener('dragend', () => li.classList.remove('dragging'));
+      li.addEventListener('dragover', e => e.preventDefault());
+      li.addEventListener('drop', e => {
+        e.preventDefault();
+        const from = +e.dataTransfer.getData('text/plain');
+        const to = +li.dataset.index;
+        const moved = files.splice(from, 1)[0];
+        files.splice(to, 0, moved);
+        render();
+      });
+      li.querySelector('button').addEventListener('click', () => { files.splice(i, 1); render(); updateSizeWarning(files, warnElId); });
+      list.appendChild(li);
+    });
+  }
+
+  return { getFiles: () => files };
+}
+
+const imgList = setupList('dz-img', 'input-img', 'list-img', f => f.type.startsWith('image/'), 'warn-img');
+const mergeList = setupList('dz-merge', 'input-merge', 'list-merge', f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'), 'warn-merge');
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+document.getElementById('btn-img').addEventListener('click', async () => {
+  const files = imgList.getFiles();
+  const statusEl = document.getElementById('status-img');
+  const btn = document.getElementById('btn-img');
+  statusEl.className = 'status'; statusEl.textContent = '';
+  if (!files.length) { statusEl.textContent = 'Add at least one image first.'; statusEl.className='status err'; return; }
+  btn.disabled = true;
+  try {
+    const rotate = document.getElementById('rotate-check').checked;
+    let doc = null;
+    for (let i = 0; i < files.length; i++) {
+      statusEl.textContent = `Processing ${i+1}/${files.length}: ${files[i].name}`;
+      checkMemoryPressure();
+      const img = await loadImage(files[i]);
+      const canvas = document.createElement('canvas');
+      let w = img.naturalWidth, h = img.naturalHeight;
+      const doRotate = rotate && w > h;
+      canvas.width = doRotate ? h : w;
+      canvas.height = doRotate ? w : h;
+      const ctx = canvas.getContext('2d');
+      if (doRotate) {
+        ctx.translate(canvas.width, 0);
+        ctx.rotate(Math.PI / 2);
+      }
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      const pw = canvas.width * 0.75, ph = canvas.height * 0.75; // px -> pt
+      if (!doc) {
+        doc = new window.jspdf.jsPDF({ unit: 'pt', format: [pw, ph] });
+      } else {
+        doc.addPage([pw, ph]);
+      }
+      doc.addImage(dataUrl, 'JPEG', 0, 0, pw, ph);
+    }
+    let filename = (document.getElementById('name-img').value || 'output.pdf').trim();
+    if (!filename.toLowerCase().endsWith('.pdf')) filename += '.pdf';
+    const blob = doc.output('blob');
+    await saveFile(filename, blob);
+    statusEl.textContent = `Done — ${files.length} page PDF created.`;
+    statusEl.className = 'status ok';
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.className = 'status err';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btn-merge').addEventListener('click', async () => {
+  const files = mergeList.getFiles();
+  const statusEl = document.getElementById('status-merge');
+  const btn = document.getElementById('btn-merge');
+  statusEl.className = 'status'; statusEl.textContent = '';
+  if (!files.length) { statusEl.textContent = 'Add at least one PDF first.'; statusEl.className='status err'; return; }
+  btn.disabled = true;
+  try {
+    const { PDFDocument } = window.PDFLib;
+    const merged = await PDFDocument.create();
+    let okCount = 0, skipped = [];
+    for (let i = 0; i < files.length; i++) {
+      statusEl.textContent = `Adding ${i+1}/${files.length}: ${files[i].name}`;
+      checkMemoryPressure();
+      try {
+        const bytes = await files[i].arrayBuffer();
+        const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+        const pages = await merged.copyPages(src, src.getPageIndices());
+        pages.forEach(p => merged.addPage(p));
+        okCount++;
+      } catch (e) {
+        skipped.push(files[i].name);
+      }
+    }
+    if (okCount === 0) throw new Error('No valid PDFs found to merge.');
+    let filename = (document.getElementById('name-merge').value || 'merged.pdf').trim();
+    if (!filename.toLowerCase().endsWith('.pdf')) filename += '.pdf';
+    const bytes = await merged.save();
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    await saveFile(filename, blob);
+    statusEl.textContent = `Done — merged ${okCount} file(s).` + (skipped.length ? ` Skipped: ${skipped.join(', ')}` : '');
+    statusEl.className = 'status ok';
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.className = 'status err';
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
